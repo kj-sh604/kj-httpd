@@ -1,8 +1,574 @@
-<html>
+<!doctype html>
+<html lang="en">
 <head>
-  <title>hello world!</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>kj-httpd browser native test page</title>
+<style>
+/* config */
+:root {
+  color-scheme: light;
+  --bg: #f6f6f4;
+  --fg: #1d1d1f;
+  --muted: #6e6e73;
+  --card: #ffffff;
+  --line: #e3e3df;
+  --accent: #3563e9;
+  --good: #2e9e5b;
+  --bad: #d64545;
+  --gold: #f5b301;
+  --shadow: 0 1px 2px rgb(0 0 0 / 5%), 0 6px 20px rgb(0 0 0 / 5%);
+  --radius: 12px;
+}
+
+/* dark mode, toggled by the switch in the nav */
+body:has(#theme:checked) {
+  color-scheme: dark;
+  --bg: #121213;
+  --fg: #ebebec;
+  --muted: #9a9aa0;
+  --card: #1c1c1e;
+  --line: #2e2e31;
+  --accent: #7ea0ff;
+  --shadow: 0 1px 2px rgb(0 0 0 / 40%), 0 6px 20px rgb(0 0 0 / 30%);
+}
+
+* { box-sizing: border-box; }
+
+html { scroll-behavior: smooth; }
+
+body {
+  margin: 0;
+  font: 16px/1.65 system-ui, -apple-system, "Segoe UI", sans-serif;
+  background: var(--bg);
+  color: var(--fg);
+}
+
+::selection { background: var(--accent); color: #fff; }
+
+a { color: var(--accent); }
+
+/* nav */
+.nav {
+  position: sticky;
+  top: 0;
+  z-index: 10;
+  display: flex;
+  align-items: center;
+  gap: 4px 14px;
+  flex-wrap: wrap;
+  padding: 10px 20px;
+  border-bottom: 1px solid var(--line);
+  background: color-mix(in srgb, var(--bg) 88%, transparent);
+  backdrop-filter: blur(8px);
+}
+
+.nav .brand { font-weight: 650; color: var(--fg); text-decoration: none; }
+.nav a:not(.brand) { color: var(--muted); text-decoration: none; font-size: 14px; }
+.nav a:not(.brand):hover { color: var(--accent); }
+.nav .spacer { flex: 1; }
+
+/* generic switch, used in the nav and the switches section */
+.switch {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  cursor: pointer;
+  user-select: none;
+  font-size: 14px;
+  color: var(--muted);
+}
+
+.switch input { position: absolute; opacity: 0; width: 1px; height: 1px; }
+
+.switch .track {
+  flex: none;
+  width: 36px;
+  height: 20px;
+  border-radius: 999px;
+  background: var(--line);
+  position: relative;
+  transition: background .18s ease;
+}
+
+.switch .track::after {
+  content: "";
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 1px 2px rgb(0 0 0 / 25%);
+  transition: left .18s ease;
+}
+
+.switch input:checked + .track { background: var(--accent); }
+.switch input:checked + .track::after { left: 18px; }
+.switch input:focus-visible + .track { outline: 2px solid var(--accent); outline-offset: 2px; }
+
+/* page frame */
+.hero, main, .foot {
+  max-width: 760px;
+  margin: 0 auto;
+  padding-inline: 20px;
+}
+
+.hero { padding-top: 42px; }
+.hero h1 { margin: 0 0 8px; font-size: 28px; letter-spacing: -0.02em; }
+.hero p { margin: 0; color: var(--muted); }
+
+main { padding-bottom: 70px; }
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+  padding: 20px;
+  margin: 18px 0;
+}
+
+.card h2 { margin: 0 0 4px; font-size: 19px; }
+.card .lead { margin: 0 0 16px; color: var(--muted); font-size: 14px; }
+
+/* details */
+details {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 10px 14px;
+  margin: 8px 0;
+}
+
+details + details { margin-top: 8px; }
+
+summary { cursor: pointer; font-weight: 600; }
+summary::marker { color: var(--accent); }
+details p { color: var(--muted); margin: 10px 0 4px; }
+
+/* tabs */
+.tabs > input { position: absolute; opacity: 0; pointer-events: none; }
+
+.tab-bar {
+  display: flex;
+  gap: 4px;
+  border-bottom: 1px solid var(--line);
+  margin-bottom: 14px;
+}
+
+.tab-bar label {
+  padding: 7px 14px;
+  cursor: pointer;
+  color: var(--muted);
+  border-bottom: 2px solid transparent;
+  margin-bottom: -1px;
+  font-size: 15px;
+}
+
+.tab-bar label:hover { color: var(--fg); }
+
+.tab-pane { display: none; margin: 0; color: var(--muted); }
+.tab-pane strong { color: var(--fg); }
+
+#t1:checked ~ .tab-bar label[for="t1"],
+#t2:checked ~ .tab-bar label[for="t2"],
+#t3:checked ~ .tab-bar label[for="t3"] {
+  color: var(--fg);
+  border-color: var(--accent);
+}
+
+#t1:focus-visible ~ .tab-bar label[for="t1"],
+#t2:focus-visible ~ .tab-bar label[for="t2"],
+#t3:focus-visible ~ .tab-bar label[for="t3"] {
+  outline: 2px solid var(--accent);
+}
+
+#t1:checked ~ .tab-body > :nth-child(1),
+#t2:checked ~ .tab-body > :nth-child(2),
+#t3:checked ~ .tab-body > :nth-child(3) {
+  display: block;
+}
+
+/* switches */
+.switches { counter-reset: on; display: grid; gap: 12px; }
+.switches input:checked { counter-increment: on; }
+.switches .count { margin: 8px 0 0; color: var(--muted); font-size: 14px; }
+.switches .count::after { content: counter(on) " of 4 switched on"; }
+
+/* rating */
+.rating { display: flex; flex-direction: row-reverse; justify-content: flex-end; gap: 2px; }
+.rating input { position: absolute; opacity: 0; }
+
+.rating label {
+  font-size: 32px;
+  line-height: 1;
+  color: var(--line);
+  cursor: pointer;
+  transition: color .12s ease, transform .12s ease;
+}
+
+.rating label:hover, .rating label:hover ~ label { color: var(--gold); }
+.rating input:checked ~ label { color: var(--gold); }
+.rating label:hover { transform: scale(1.15); }
+.rating input:focus-visible + label { outline: 2px solid var(--accent); border-radius: 4px; }
+.rating .note { margin: 10px 0 0; color: var(--muted); font-size: 14px; }
+
+/* form checks */
+.checks { display: grid; gap: 14px; max-width: 340px; }
+.checks label { display: grid; gap: 4px; font-size: 14px; color: var(--muted); }
+.checks input {
+  font: inherit;
+  padding: 8px 11px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--bg);
+  color: var(--fg);
+}
+.checks input:focus-visible { outline: 2px solid var(--accent); outline-offset: 1px; }
+.checks input:valid { border-color: var(--good); }
+.checks input:invalid:not(:placeholder-shown) { border-color: var(--bad); }
+.checks .hint { font-size: 13px; min-height: 1.2em; }
+.checks label:has(input:valid) .hint::after { content: "looks good"; color: var(--good); }
+.checks label:has(input:invalid:not(:placeholder-shown)) .hint::after {
+  content: "not valid yet";
+  color: var(--bad);
+}
+.checks:has(input:invalid:not(:placeholder-shown)) .btn {
+  opacity: .55;
+  cursor: not-allowed;
+}
+
+/* buttons */
+.btn {
+  justify-self: start;
+  font: inherit;
+  padding: 8px 16px;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: var(--card);
+  color: var(--fg);
+  cursor: pointer;
+  transition: border-color .15s ease, color .15s ease;
+}
+
+.btn:hover { border-color: var(--accent); color: var(--accent); }
+
+/* carousel */
+.carousel { overflow: hidden; border-radius: 10px; border: 1px solid var(--line); }
+.carousel > input { position: absolute; opacity: 0; pointer-events: none; }
+
+.slides { display: flex; transition: transform .35s ease; }
+.slides figure { flex: 0 0 100%; margin: 0; padding: 44px 20px; text-align: center; color: #fff; }
+.slides figure:nth-child(1) { background: linear-gradient(135deg, #3563e9, #7aa2ff); }
+.slides figure:nth-child(2) { background: linear-gradient(135deg, #12805c, #4cc38a); }
+.slides figure:nth-child(3) { background: linear-gradient(135deg, #9a3412, #fb923c); }
+.slides .big { display: block; font-size: 34px; font-weight: 700; }
+.slides .sub { opacity: .85; font-size: 14px; }
+
+#s2:checked ~ .slides { transform: translateX(-100%); }
+#s3:checked ~ .slides { transform: translateX(-200%); }
+
+.dots { display: flex; justify-content: center; gap: 8px; padding: 10px 0; }
+.dots label {
+  width: 10px;
+  height: 10px;
+  border-radius: 50%;
+  background: var(--line);
+  cursor: pointer;
+}
+.dots label:hover { background: var(--muted); }
+#s1:checked ~ .dots label[for="s1"],
+#s2:checked ~ .dots label[for="s2"],
+#s3:checked ~ .dots label[for="s3"] { background: var(--accent); }
+
+/* tooltips */
+.tip { position: relative; border-bottom: 1px dotted var(--muted); cursor: help; }
+.tip::after {
+  content: attr(data-tip);
+  position: absolute;
+  bottom: 150%;
+  left: 50%;
+  transform: translateX(-50%);
+  background: #202024;
+  color: #f2f2f2;
+  padding: 5px 10px;
+  border-radius: 7px;
+  font-size: 13px;
+  white-space: nowrap;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity .15s ease;
+}
+.tip:hover::after, .tip:focus::after { opacity: 1; }
+
+.muted { color: var(--muted); }
+
+/* popover */
+[popover] {
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  background: var(--card);
+  color: var(--fg);
+  box-shadow: var(--shadow);
+  padding: 16px 18px;
+  max-width: 320px;
+}
+[popover] h3 { margin: 0 0 6px; font-size: 15px; }
+[popover] p { margin: 0; color: var(--muted); font-size: 14px; }
+
+/* motion */
+.bar { height: 8px; border-radius: 999px; background: var(--line); overflow: hidden; }
+.bar span {
+  display: block;
+  height: 100%;
+  width: 40%;
+  border-radius: inherit;
+  background: var(--accent);
+  animation: slide 2.2s ease-in-out infinite;
+}
+
+@keyframes slide {
+  0% { margin-left: 0; }
+  50% { margin-left: 60%; }
+  100% { margin-left: 0; }
+}
+
+.spin-row { display: flex; align-items: center; gap: 22px; margin-top: 18px; }
+.spinner {
+  width: 22px;
+  height: 22px;
+  border: 3px solid var(--line);
+  border-top-color: var(--accent);
+  border-radius: 50%;
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+.pulse { width: 14px; height: 14px; border-radius: 50%; background: var(--accent); animation: pulse 1.4s ease-in-out infinite; }
+
+@keyframes pulse {
+  0%, 100% { opacity: .35; transform: scale(.85); }
+  50% { opacity: 1; transform: scale(1.1); }
+}
+
+.spin-row span { color: var(--muted); font-size: 14px; }
+
+/* scroll snap */
+.snap {
+  display: flex;
+  gap: 12px;
+  overflow-x: auto;
+  scroll-snap-type: x mandatory;
+  padding: 4px 4px 12px;
+}
+.snap > div {
+  flex: 0 0 62%;
+  scroll-snap-align: start;
+  background: var(--bg);
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 18px;
+}
+.snap .n {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 26px;
+  height: 26px;
+  border-radius: 50%;
+  background: var(--accent);
+  color: #fff;
+  font-size: 13px;
+  font-weight: 700;
+}
+.snap p { color: var(--muted); font-size: 14px; margin: 10px 0 0; }
+
+/* footer */
+.foot {
+  padding-block: 22px 40px;
+  color: var(--muted);
+  font-size: 14px;
+  border-top: 1px solid var(--line);
+}
+
+.foot p { margin: 4px 0; }
+
+/* accessibility: no motion for those who ask for none */
+@media (prefers-reduced-motion: reduce) {
+  html { scroll-behavior: auto; }
+  *, *::before, *::after {
+    animation-duration: .01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .01ms !important;
+  }
+}
+</style>
 </head>
 <body>
-  <h1>hello world!</h1>
+
+<nav class="nav">
+  <a class="brand" href="#top">kj_sh604 noJS test page</a>
+  <a href="#tabs">tabs</a>
+  <a href="#details">panels</a>
+  <a href="#switches">switches</a>
+  <a href="#rating">rating</a>
+  <a href="#checks">checks</a>
+  <a href="#carousel">carousel</a>
+  <a href="#tips">notes</a>
+  <a href="#motion">motion</a>
+  <a href="#snap">strip</a>
+  <span class="spacer"></span>
+  <label class="switch"><input type="checkbox" id="theme"><span class="track"></span>dark</label>
+</nav>
+
+<header class="hero" id="top">
+  <h1>browser native test page</h1>
+  <p>This page is served by kj-httpd and exercises a pile of native html and css features. If everything below responds to you, the whole file made it across the wire intact. Flip, click and drag around.</p>
+</header>
+
+<main>
+  <section class="card" id="tabs">
+    <h2>tabs</h2>
+    <p class="lead">A tab set built from radio buttons and sibling selectors.</p>
+    <div class="tabs">
+      <input type="radio" name="tab" id="t1" checked>
+      <input type="radio" name="tab" id="t2">
+      <input type="radio" name="tab" id="t3">
+      <div class="tab-bar">
+        <label for="t1">serving</label>
+        <label for="t2">headers</label>
+        <label for="t3">files</label>
+      </div>
+      <div class="tab-body">
+        <p class="tab-pane"><strong>Static serving.</strong> Files come off the disk, mime types are picked by suffix, and single byte ranges work if you ask for one. Gzip passthrough kicks in when a pre-compressed neighbor exists.</p>
+        <p class="tab-pane"><strong>Headers.</strong> Responses carry a date, an etag, a last modified stamp and a content length. Conditional requests with that etag answer 304 without touching the file again.</p>
+        <p class="tab-pane"><strong>Files.</strong> This very page, plus index.html, a license and a readme. The server is a 37 kilobyte static binary with no runtime dependencies, so the serving story is short: one file, one process per request.</p>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="details">
+    <h2>collapsible panels</h2>
+    <p class="lead">Native disclosure widgets, open and close to your heart's content.</p>
+    <details open>
+      <summary>What is this page for?</summary>
+      <p>It is a smoke test with style. Request it after starting the server and everything here should be clickable, hoverable and scrollable. It is also a handy mirror to hold up to a browser.</p>
+    </details>
+    <details>
+      <summary>Where do the widgets get their behavior?</summary>
+      <p>Checkbox and radio inputs, sibling and :has() selectors, counters and one details block. Standard browser fare.</p>
+    </details>
+    <details>
+      <summary>Can I share a link to a tab?</summary>
+      <p>No deep links into widget state for now, the section anchors in the nav do work though.</p>
+    </details>
+  </section>
+
+  <section class="card" id="switches">
+    <h2>switches</h2>
+    <p class="lead">A row of toggles with a live readout, counted by css counters.</p>
+    <div class="switches">
+      <label class="switch"><input type="checkbox" checked><span class="track"></span>landing lights</label>
+      <label class="switch"><input type="checkbox"><span class="track"></span>cargo door</label>
+      <label class="switch"><input type="checkbox"><span class="track"></span>autopilot</label>
+      <label class="switch"><input type="checkbox"><span class="track"></span>wiper fluid</label>
+      <p class="count"></p>
+    </div>
+  </section>
+
+  <section class="card" id="rating">
+    <h2>star rating</h2>
+    <p class="lead">Hover to preview, click to commit, keyboard works too.</p>
+    <div class="rating">
+      <input type="radio" name="rate" id="r5">
+      <label for="r5">&#9733;</label>
+      <input type="radio" name="rate" id="r4">
+      <label for="r4">&#9733;</label>
+      <input type="radio" name="rate" id="r3">
+      <label for="r3">&#9733;</label>
+      <input type="radio" name="rate" id="r2">
+      <label for="r2">&#9733;</label>
+      <input type="radio" name="rate" id="r1">
+      <label for="r1">&#9733;</label>
+    </div>
+    <p class="note">Your rating stays in this tab, nothing is sent anywhere.</p>
+  </section>
+
+  <section class="card" id="checks">
+    <h2>live form checks</h2>
+    <p class="lead">Validation feedback as you type, straight from the input states.</p>
+    <form class="checks" action="">
+      <label>
+        email
+        <input type="email" required placeholder="you@example.com">
+        <span class="hint"></span>
+      </label>
+      <label>
+        handle
+        <input type="text" required pattern="[a-z0-9_-]{3,}" placeholder="three or more lowercase chars">
+        <span class="hint"></span>
+      </label>
+      <button class="btn">submit</button>
+    </form>
+  </section>
+
+  <section class="card" id="carousel">
+    <h2>carousel</h2>
+    <p class="lead">Three slides on a radio rail, arrows optional, dots included.</p>
+    <div class="carousel">
+      <input type="radio" name="slide" id="s1" checked>
+      <input type="radio" name="slide" id="s2">
+      <input type="radio" name="slide" id="s3">
+      <div class="slides">
+        <figure><span class="big">37 kb</span><span class="sub">one static binary, no dynamic linker</span></figure>
+        <figure><span class="big">0 allocs</span><span class="sub">the server never touches a heap</span></figure>
+        <figure><span class="big">72 tests</span><span class="sub">diffed against busybox httpd, byte for byte</span></figure>
+      </div>
+      <div class="dots">
+        <label for="s1" title="slide one"></label>
+        <label for="s2" title="slide two"></label>
+        <label for="s3" title="slide three"></label>
+      </div>
+    </div>
+  </section>
+
+  <section class="card" id="tips">
+    <h2>hover notes</h2>
+    <p class="lead">Little explanations that wait for you to <span class="tip" tabindex="0" data-tip="like this one">hover</span>.</p>
+    <p class="muted">There is also a <button class="btn" popovertarget="pop">popover</button> in this section, since browsers grew a native one. Press escape or click anywhere to dismiss it.</p>
+    <div id="pop" popover>
+      <h3>a native popover</h3>
+      <p>A div with the popover attribute and a button that targets it. The browser handles the layering, the escape key and the light dismiss for you.</p>
+    </div>
+  </section>
+
+  <section class="card" id="motion">
+    <h2>motion</h2>
+    <p class="lead">Animations straight out of stylesheets. They bow out politely if your system asks for less motion.</p>
+    <div class="bar"><span></span></div>
+    <div class="spin-row">
+      <div class="spinner"></div>
+      <div class="pulse"></div>
+      <span>spinners and pulses, drawn with borders and keyframes</span>
+    </div>
+  </section>
+
+  <section class="card" id="snap">
+    <h2>scroll snap strip</h2>
+    <p class="lead">Swipe or scroll sideways, the strip settles on each card.</p>
+    <div class="snap">
+      <div><span class="n">1</span><p>Drag me sideways with a trackpad, a mouse wheel or a finger.</p></div>
+      <div><span class="n">2</span><p>scroll-snap-type does the settling at both ends of the gesture.</p></div>
+      <div><span class="n">3</span><p>Each card is a plain div with scroll-snap-align: start.</p></div>
+    </div>
+  </section>
+</main>
+
+<footer class="foot">
+  <p>served by kj-httpd, every widget on this page is plain html and css, view source and lift whatever you like.</p>
+</footer>
+
 </body>
 </html>
