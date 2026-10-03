@@ -50,7 +50,8 @@ _start_servers() {
     $BB httpd -f -p 127.0.0.1:$BB_PORT -h "$WORK/doc" -c "$_conf" "$@" \
         >/dev/null 2>&1 &
     BB_PID=$!
-    $KJ -f -p 127.0.0.1:$KJ_PORT -h "$WORK/doc" -c "$_conf" "$@" \
+    # kj-httpd runs in the foreground by default, busybox needs -f
+    $KJ -p 127.0.0.1:$KJ_PORT -h "$WORK/doc" -c "$_conf" "$@" \
         >/dev/null 2>&1 &
     KJ_PID=$!
     sleep 0.3
@@ -388,36 +389,71 @@ t_oversize() {
 }
 
 t_daemon() {
-    # no -f, both must detach and serve
-    $BB httpd -p 127.0.0.1:$BB_PORT -h "$WORK/doc" -c "$WORK/conf.empty" \
-        >/dev/null 2>&1 &
-    _bb_bg=$!
+    _mysid=$(ps -o sid= -p $$ | tr -d ' ')
+
+    # default: must stay attached and serve
     $KJ -p 127.0.0.1:$KJ_PORT -h "$WORK/doc" -c "$WORK/conf.empty" \
         >/dev/null 2>&1 &
-    _kj_bg=$!
-    sleep 0.4
-    _a=$(printf 'GET / HTTP/1.1\r\n\r\n' | timeout 3 $NC 127.0.0.1 $BB_PORT \
-        2>/dev/null | head -1)
-    _b=$(printf 'GET / HTTP/1.1\r\n\r\n' | timeout 3 $NC 127.0.0.1 $KJ_PORT \
-        2>/dev/null | head -1)
-    if [ "$_a" = "$_b" ] && [ -n "$_a" ]; then
+    _fg=$!
+    sleep 0.3
+    _sid=$(ps -o sid= -p $_fg | tr -d ' ')
+    _a=$(printf 'GET / HTTP/1.1\r\n\r\n' | timeout 3 $NC 127.0.0.1 $KJ_PORT \
+        2>/dev/null | head -1 | tr -d '\r')
+    if [ "$_sid" = "$_mysid" ] && [ "$_a" = "HTTP/1.1 200 OK" ]; then
         PASS=$((PASS + 1))
-        printf 'ok     daemon mode without -f\n'
+        printf 'ok     default runs in the foreground (session %s)\n' "$_sid"
     else
         FAIL=$((FAIL + 1))
-        printf 'FAIL   daemon mode without -f\n'
-        printf '  bb: [%s]\n  kj: [%s]\n' "$_a" "$_b"
+        printf 'FAIL   default runs in the foreground (sid %s vs %s, [%s])\n' \
+            "$_sid" "$_mysid" "$_a"
     fi
-    kill $_bb_bg $_kj_bg 2>/dev/null
-    pkill -f "httpd -p 127.0.0.1:$BB_PORT" 2>/dev/null
-    pkill -f "$KJ -p 127.0.0.1:$KJ_PORT" 2>/dev/null
+    kill $_fg 2>/dev/null
     sleep 0.2
+
+    # -b: must detach and still serve
+    $KJ -b -p 127.0.0.1:$KJ_PORT -h "$WORK/doc" -c "$WORK/conf.empty" \
+        >/dev/null 2>&1
+    sleep 0.3
+    _bg=$(pgrep -f "$KJ -b -p 127.0.0.1:$KJ_PORT" | head -1)
+    _sid=$(ps -o sid= -p $_bg 2>/dev/null | tr -d ' ')
+    _b=$(printf 'GET / HTTP/1.1\r\n\r\n' | timeout 3 $NC 127.0.0.1 $KJ_PORT \
+        2>/dev/null | head -1 | tr -d '\r')
+    if [ -n "$_bg" ] && [ "$_sid" != "$_mysid" ] && \
+       [ "$_b" = "HTTP/1.1 200 OK" ]; then
+        PASS=$((PASS + 1))
+        printf 'ok     -b detaches (own session %s)\n' "$_sid"
+    else
+        FAIL=$((FAIL + 1))
+        printf 'FAIL   -b detaches (pid [%s] sid [%s] vs %s, [%s])\n' \
+            "$_bg" "$_sid" "$_mysid" "$_b"
+    fi
+
+    # daemonized responses still match busybox daemonized responses
+    $BB httpd -p 127.0.0.1:$BB_PORT -h "$WORK/doc" -c "$WORK/conf.empty" \
+        >/dev/null 2>&1
+    sleep 0.3
+    t_case 'daemon mode serves like busybox' 'GET / HTTP/1.1\r\n\r\n'
+    pkill -f "httpd -p 127.0.0.1:$BB_PORT" 2>/dev/null
+    pkill -f "$KJ -b -p 127.0.0.1:$KJ_PORT" 2>/dev/null
+    kill $_bg 2>/dev/null
+    sleep 0.2
+
+    # -f is rejected on purpose, this is the deviation from busybox
+    _out=$(timeout 2 $KJ -f -p 127.0.0.1:$KJ_PORT -h "$WORK/doc" 2>&1)
+    _rc=$?
+    if [ "$_rc" -ne 0 ] && printf '%s' "$_out" | grep -q 'invalid option: -f'; then
+        PASS=$((PASS + 1))
+        printf 'ok     -f rejected, the deviation from busybox\n'
+    else
+        FAIL=$((FAIL + 1))
+        printf 'FAIL   -f rejected (rc %s, [%s])\n' "$_rc" "$_out"
+    fi
 }
 
 t_cli_errors() {
     # -c with a missing file must fail the same way
     _a=$(timeout 2 $BB httpd -f -p $BB_PORT -h "$WORK/doc" -c /no/such/conf 2>&1)
-    _b=$(timeout 2 $KJ -f -p $BB_PORT -h "$WORK/doc" -c /no/such/conf 2>&1)
+    _b=$(timeout 2 $KJ -p $BB_PORT -h "$WORK/doc" -c /no/such/conf 2>&1)
     if [ "$_a" = "$_b" ]; then
         PASS=$((PASS + 1))
         printf 'ok     -c missing file error\n'

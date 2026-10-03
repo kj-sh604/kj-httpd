@@ -3534,14 +3534,14 @@ static void serve_inetd(void) {
 static void usage(const char *self) {
   char msg[1024];
   ksnprintf(msg, sizeof(msg),
-            "Usage: %s [-ifv[v]] [-c CONFFILE] [-p [IP:]PORT] "
+            "Usage: %s [-ibv[v]] [-c CONFFILE] [-p [IP:]PORT] "
             "[-u USER[:GRP]] [-r REALM] [-h HOME]\n"
             "or %s -d/-e/-m STRING\n"
             "\n"
             "Listen for incoming HTTP requests\n"
             "\n"
             "\t-i\t\tInetd mode\n"
-            "\t-f\t\tRun in foreground\n"
+            "\t-b\t\tRun in background\n"
             "\t-v[v]\t\tVerbose\n"
             "\t-p [IP:]PORT\tBind to IP:PORT (default *:80)\n"
             "\t-u USER[:GRP]\tSet uid/gid after binding to port\n"
@@ -3621,7 +3621,7 @@ int main(int argc, char **argv, char **envp) {
   const char *pass = NULL;
   const char *s_ugid = NULL;
   unsigned opt_uid = 0, opt_gid = 0;
-  int opt_inetd = 0, opt_foreground = 0;
+  int opt_inetd = 0, opt_background = 0;
   const char *bind_addr_or_port = "80";
 
   environ = envp;
@@ -3686,10 +3686,9 @@ int main(int argc, char **argv, char **envp) {
         break;
       case 'i':
         opt_inetd = 1;
-        opt_foreground = 1;
         break;
-      case 'f':
-        opt_foreground = 1;
+      case 'b':
+        opt_background = 1;
         break;
       case 'v':
         verbose++;
@@ -3759,7 +3758,7 @@ int main(int argc, char **argv, char **envp) {
   if (opt_inetd) {
     serve_inetd();
   } else {
-    if (!opt_foreground) {
+    if (opt_background) {
       /* fork and detach, keep stdio and cwd as they are */
       long pid = sysret(k_fork());
       if (pid < 0)
