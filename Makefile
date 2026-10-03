@@ -1,12 +1,21 @@
+
 PREFIX ?= $(HOME)/.local
 
+CC = cc
+
+ifneq (,$(findstring tcc,$(CC)))
+LAYOUTFLAGS =
+else
+LAYOUTFLAGS = -Wl,-n -Wl,--no-warn-rwx-segments \
+	  -Wl,--gc-sections -Wl,--build-id=none
+endif
+
 kj-httpd: start.S httpd.c
-	gcc -Wall -Wextra -pedantic \
-	  -s -Os -no-pie -nostdlib -ffreestanding \
+	$(CC) -Wall -Wextra -pedantic \
+	  -s -Os -static -nostdlib -ffreestanding \
 	  -fno-stack-protector -fdata-sections -ffunction-sections \
 	  -fno-unwind-tables -fno-asynchronous-unwind-tables \
-	  -Wl,-n -Wl,--no-warn-rwx-segments \
-	  -Wl,--gc-sections -Wl,--build-id=none \
+	  $(LAYOUTFLAGS) \
 	  start.S httpd.c -o kj-httpd
 	strip -R .comment kj-httpd
 
