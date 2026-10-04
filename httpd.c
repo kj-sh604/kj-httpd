@@ -513,10 +513,9 @@ static size_t kvformat(char *dst, size_t cap, const char *fmt, va_list ap) {
         v = va_arg(ap, unsigned long);
       else
         v = va_arg(ap, unsigned int);
-      if ((c == 'd' || c == 'i') &&
-          (longs >= 2   ? (long long)v < 0
-           : longs == 1 ? (long)v < 0
-                        : (int)v < 0)) {
+      if ((c == 'd' || c == 'i') && (longs >= 2   ? (long long)v < 0
+                                     : longs == 1 ? (long)v < 0
+                                                  : (int)v < 0)) {
         neg = 1;
         v = longs >= 2   ? (unsigned long long)(-(long long)v)
             : longs == 1 ? (unsigned long)(-(long)v)
@@ -698,9 +697,8 @@ static void civil_from_days(long z, int *yp, int *mp, int *dp) {
 static void fmt_rfc1123(char *out, long t) {
   static const char wday[7][4] = {"Sun", "Mon", "Tue", "Wed",
                                   "Thu", "Fri", "Sat"};
-  static const char month[12][4] = {"Jan", "Feb", "Mar", "Apr",
-                                    "May", "Jun", "Jul", "Aug",
-                                    "Sep", "Oct", "Nov", "Dec"};
+  static const char month[12][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
+                                    "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
   long days = t / 86400;
   long secs = t % 86400;
   int wd = (int)((days + 4) % 7);
@@ -797,14 +795,14 @@ static const char b64t[] =
 /* decode base64 in place, returns pointer to the terminating NUL */
 static char *decode_base64(char *data) {
   static const signed char tab[256] = {
-      -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-      -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
-      -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63, 52, 53, 54, 55, 56, 57,
-      58, 59, 60, 61, -1, -1, -1, -1, -1, -1, -1, 0,  1,  2,  3,  4,  5,  6,
-      7,  8,  9,  10, 11, 12, 13, 14, 15, 16, 17, 18, 19, 20, 21, 22, 23, 24,
-      25, -1, -1, -1, -1, -1, -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36,
-      37, 38, 39, 40, 41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1,
-      -1, -1};
+      -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+      -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+      -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, 62, -1, -1, -1, 63,
+      52, 53, 54, 55, 56, 57, 58, 59, 60, 61, -1, -1, -1, -1, -1, -1,
+      -1, 0,  1,  2,  3,  4,  5,  6,  7,  8,  9,  10, 11, 12, 13, 14,
+      15, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, -1, -1, -1, -1, -1,
+      -1, 26, 27, 28, 29, 30, 31, 32, 33, 34, 35, 36, 37, 38, 39, 40,
+      41, 42, 43, 44, 45, 46, 47, 48, 49, 50, 51, -1, -1, -1, -1, -1};
   char *src = data;
   char *dst = data;
   unsigned acc = 0;
@@ -846,17 +844,17 @@ static uint32_t rol32(uint32_t n, int k) { return (n << k) | (n >> (32 - k)); }
 #define MD5_G(x, y, z) (y ^ (z & (y ^ x)))
 #define MD5_H(x, y, z) (x ^ y ^ z)
 #define MD5_I(x, y, z) (y ^ (x | ~z))
-#define MD5_FF(a, b, c, d, w, s, t) \
-  a += MD5_F(b, c, d) + w + t;      \
+#define MD5_FF(a, b, c, d, w, s, t)                                            \
+  a += MD5_F(b, c, d) + w + t;                                                 \
   a = rol32(a, s) + b
-#define MD5_GG(a, b, c, d, w, s, t) \
-  a += MD5_G(b, c, d) + w + t;      \
+#define MD5_GG(a, b, c, d, w, s, t)                                            \
+  a += MD5_G(b, c, d) + w + t;                                                 \
   a = rol32(a, s) + b
-#define MD5_HH(a, b, c, d, w, s, t) \
-  a += MD5_H(b, c, d) + w + t;      \
+#define MD5_HH(a, b, c, d, w, s, t)                                            \
+  a += MD5_H(b, c, d) + w + t;                                                 \
   a = rol32(a, s) + b
-#define MD5_II(a, b, c, d, w, s, t) \
-  a += MD5_I(b, c, d) + w + t;      \
+#define MD5_II(a, b, c, d, w, s, t)                                            \
+  a += MD5_I(b, c, d) + w + t;                                                 \
   a = rol32(a, s) + b
 
 static const uint32_t md5_tab[64] = {
@@ -1357,12 +1355,11 @@ static char *md5_crypt(const char *key, const char *setting, char *out) {
   memcpy(out, setting, 3 + slen);
   char *p = out + 3 + slen;
   *p++ = '$';
-  static const unsigned char perm[5][3] = {{0, 6, 12},  {1, 7, 13},
-                                           {2, 8, 14},  {3, 9, 15},
-                                           {4, 10, 5}};
+  static const unsigned char perm[5][3] = {
+      {0, 6, 12}, {1, 7, 13}, {2, 8, 14}, {3, 9, 15}, {4, 10, 5}};
   for (i = 0; i < 5; i++)
-    p = to64_crypt(p, (md[perm[i][0]] << 16) | (md[perm[i][1]] << 8) |
-                          md[perm[i][2]], 4);
+    p = to64_crypt(
+        p, (md[perm[i][0]] << 16) | (md[perm[i][1]] << 8) | md[perm[i][2]], 4);
   p = to64_crypt(p, md[11], 2);
   *p = 0;
   return out;
@@ -1477,8 +1474,8 @@ static char *sha256_crypt(const char *key, const char *setting, char *out) {
       {0, 10, 20}, {21, 1, 11}, {12, 22, 2}, {3, 13, 23}, {24, 4, 14},
       {15, 25, 5}, {6, 16, 26}, {27, 7, 17}, {18, 28, 8}, {9, 19, 29}};
   for (i = 0; i < 10; i++)
-    p = to64_crypt(p, (md[perm[i][0]] << 16) | (md[perm[i][1]] << 8) |
-                          md[perm[i][2]], 4);
+    p = to64_crypt(
+        p, (md[perm[i][0]] << 16) | (md[perm[i][1]] << 8) | md[perm[i][2]], 4);
   p = to64_crypt(p, (md[31] << 8) | md[30], 3);
   *p = 0;
   return out;
@@ -1573,8 +1570,8 @@ static char *sha512_crypt(const char *key, const char *setting, char *out) {
       {15, 36, 57}, {37, 58, 16}, {59, 17, 38}, {18, 39, 60}, {40, 61, 19},
       {62, 20, 41}};
   for (i = 0; i < 21; i++)
-    p = to64_crypt(p, (md[perm[i][0]] << 16) | (md[perm[i][1]] << 8) |
-                          md[perm[i][2]], 4);
+    p = to64_crypt(
+        p, (md[perm[i][0]] << 16) | (md[perm[i][1]] << 8) | md[perm[i][2]], 4);
   p = to64_crypt(p, md[63], 2);
   *p = 0;
   return out;
@@ -1676,8 +1673,8 @@ static int lookup_account(const char *path, const char *name, unsigned uid,
 }
 
 static int getpwnam(const char *name, struct pw_entry *pw) {
-  if (lookup_account("/etc/passwd", name, 0, 1, pw->passwd,
-                     sizeof(pw->passwd), &pw->uid, &pw->gid) < 0)
+  if (lookup_account("/etc/passwd", name, 0, 1, pw->passwd, sizeof(pw->passwd),
+                     &pw->uid, &pw->gid) < 0)
     return -1;
   size_t l = strlen(name);
   if (l >= sizeof(pw->name))
@@ -2423,9 +2420,8 @@ static int check_user_passwd(const char *path, char *user_and_passwd) {
       continue;
 
     size_t len = strlen(dir_prefix);
-    if (len != 1 &&
-        (strncmp(dir_prefix, path, len) != 0 ||
-         (path[len] != '/' && path[len] != '\0')))
+    if (len != 1 && (strncmp(dir_prefix, path, len) != 0 ||
+                     (path[len] != '/' && path[len] != '\0')))
       continue;
 
     prev = dir_prefix;
@@ -2571,8 +2567,9 @@ static void send_headers(unsigned responseNum) {
     log_msg("response:%u", responseNum);
 
   fmt_rfc1123(date_str, now_sec());
-  len = ksnprintf(iobuf, IOBUF_SIZE, "HTTP/1.1 %u %s\r\nDate: %s\r\n"
-                                     "Connection: close\r\n",
+  len = ksnprintf(iobuf, IOBUF_SIZE,
+                  "HTTP/1.1 %u %s\r\nDate: %s\r\n"
+                  "Connection: close\r\n",
                   responseNum, responseString, date_str);
 
   if (responseNum != HTTP_OK || found_mime) {
@@ -2587,8 +2584,7 @@ static void send_headers(unsigned responseNum) {
 
   if (responseNum == HTTP_MOVED_TEMPORARILY) {
     len += ksnprintf(iobuf + len, IOBUF_SIZE - len, "Location: %s/%s%s\r\n",
-                     found_moved, g_query ? "?" : "",
-                     g_query ? g_query : "");
+                     found_moved, g_query ? "?" : "", g_query ? g_query : "");
   }
 
   if (error_page && sysret(k_access(error_page, R_OK)) == 0) {
@@ -2615,8 +2611,8 @@ static void send_headers(unsigned responseNum) {
   }
 
   if (content_gzip)
-    len += ksnprintf(iobuf + len, IOBUF_SIZE - len,
-                     "Content-Encoding: gzip\r\n");
+    len +=
+        ksnprintf(iobuf + len, IOBUF_SIZE - len, "Content-Encoding: gzip\r\n");
 
   if (len > IOBUF_SIZE - 3)
     len = IOBUF_SIZE - 3;
@@ -2778,11 +2774,11 @@ static void env_add(const char *name, const char *value) {
 /* copy the inherited environment, skipping names we set ourselves */
 static void env_copy_inherited(void) {
   static const char *const ours[] = {
-      "PATH_INFO",       "REQUEST_METHOD", "REQUEST_URI",
-      "SCRIPT_FILENAME", "SCRIPT_NAME",    "QUERY_STRING",
+      "PATH_INFO",       "REQUEST_METHOD",  "REQUEST_URI",
+      "SCRIPT_FILENAME", "SCRIPT_NAME",     "QUERY_STRING",
       "SERVER_SOFTWARE", "SERVER_PROTOCOL", "GATEWAY_INTERFACE",
-      "REMOTE_ADDR",     "REMOTE_PORT",    "CONTENT_LENGTH",
-      "REMOTE_USER",     "AUTH_TYPE",      "CONTENT_TYPE"};
+      "REMOTE_ADDR",     "REMOTE_PORT",     "CONTENT_LENGTH",
+      "REMOTE_USER",     "AUTH_TYPE",       "CONTENT_TYPE"};
   for (char **e = environ; e && *e; e++) {
     int skip = 0;
     for (unsigned i = 0; i < sizeof(ours) / sizeof(ours[0]); i++)
@@ -2848,8 +2844,8 @@ static void cgi_io_loop_and_exit(int fromCgi_rd, int toCgi_wr, int post_len) {
 
     int pr;
     do {
-      pr = (int)sysret(
-          k_poll(pfd, hdr_cnt > 0 ? TO_CGI + 1 : FROM_CGI + 1, -1));
+      pr =
+          (int)sysret(k_poll(pfd, hdr_cnt > 0 ? TO_CGI + 1 : FROM_CGI + 1, -1));
     } while (pr < 0 && kerrno == EINTR);
     if (pr <= 0)
       break;
@@ -2943,8 +2939,8 @@ static void send_cgi_and_exit(const char *url, const char *orig_uri,
   while ((script = strchr(script + 1, '/')) != NULL) {
     stat_t sb;
     *script = '\0';
-    int dir = sysret(k_stat(url + 1, &sb)) == 0 &&
-              (sb.st_mode & S_IFMT) == S_IFDIR;
+    int dir =
+        sysret(k_stat(url + 1, &sb)) == 0 && (sb.st_mode & S_IFMT) == S_IFDIR;
     *script = '/';
     if (!dir)
       break;
@@ -3069,8 +3065,8 @@ static void send_cgi_and_exit(const char *url, const char *orig_uri,
 static int find_proxy_and_relay(const char *url, const char *method,
                                 const char *http_ver) {
   for (int i = 0; i < n_proxy; i++) {
-    if (strncmp(url, proxy_tab[i].url_from,
-                strlen(proxy_tab[i].url_from)) == 0) {
+    if (strncmp(url, proxy_tab[i].url_from, strlen(proxy_tab[i].url_from)) ==
+        0) {
       if (verbose > 1)
         log_msg("proxy:%s", url);
       unsigned char ip[4];
@@ -3407,9 +3403,8 @@ found:
     send_headers_and_exit(HTTP_MOVED_TEMPORARILY);
 
   if (cgi_type != CGI_NONE) {
-    send_cgi_and_exit(
-        (cgi_type == CGI_INDEX) ? "/cgi-bin/index.cgi" : urlcopy, urlcopy,
-        prequest, (int)POST_length);
+    send_cgi_and_exit((cgi_type == CGI_INDEX) ? "/cgi-bin/index.cgi" : urlcopy,
+                      urlcopy, prequest, (int)POST_length);
   }
 
   if (method_id != 0 && method_id != 1) {
@@ -3420,9 +3415,8 @@ found:
   /* restore the truncated .../index.html */
   if (urlp[-1] == '/')
     urlp[0] = index_page[0];
-  send_file_and_exit(urlcopy + 1,
-                     (method_id != 1) ? (SEND_HEADERS | SEND_BODY)
-                                      : SEND_HEADERS);
+  send_file_and_exit(urlcopy + 1, (method_id != 1) ? (SEND_HEADERS | SEND_BODY)
+                                                   : SEND_HEADERS);
 }
 
 /* server
