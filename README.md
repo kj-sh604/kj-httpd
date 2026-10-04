@@ -6,6 +6,8 @@ This talks to the kernel directly, so it compiles to a true static binary with n
 
 **Deliberate deviations from busybox:** ipv4 only, no ipv6 sockets, and the server runs in the foreground by default with `-b` to send it to the background.
 
+![usage screen screenshot](https://kj-media.online/pics/kj-httpd-scrot/kj-httpd-scrot.png)
+
 ## features
 
 - supports most of the busybox httpd flag set: `-i -v[v] -p -u -r -h -c -m -e -d`
