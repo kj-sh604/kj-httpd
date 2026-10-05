@@ -4,13 +4,32 @@
 typedef unsigned char uint8_t;
 typedef unsigned short uint16_t;
 typedef unsigned int uint32_t;
-typedef unsigned long uint64_t;
-typedef long int64_t;
-typedef unsigned long size_t;
-typedef long ssize_t;
+typedef int int32_t;
 typedef unsigned socklen_t;
 
-#define VERSION_STR "20261002"
+/* long is 64-bit on x86_64 and aarch64, 32-bit on armv7 */
+#if __SIZEOF_LONG__ == 8
+typedef unsigned long uint64_t;
+typedef long int64_t;
+typedef unsigned long size_t; /* same type as the stddef.h one */
+typedef long ssize_t;
+#else
+typedef unsigned long long uint64_t;
+typedef long long int64_t;
+typedef unsigned int size_t; /* 32-bit arm linux size_t */
+typedef int ssize_t;
+#endif
+
+/* armv7 uses unified syntax, the shim is built in arm state so the
+   compiler can not slip thumb into the middle of a sequence */
+#if defined(__arm__)
+__asm__(".syntax unified\n"
+        ".arm\n");
+#elif !defined(__x86_64__) && !defined(__aarch64__)
+#error unsupported arch, kj-httpd builds for x86_64, aarch64 and arm only
+#endif
+
+#define VERSION_STR "20261004"
 #define SERVER_SOFTWARE "kj-httpd/" VERSION_STR
 #define NORETURN __attribute__((noreturn))
 
@@ -39,7 +58,9 @@ typedef struct {
   char sin_zero[8];
 } sockaddr_in_t;
 
-/* x86_64 struct stat as filled by the stat syscall */
+/* kernel struct stat layouts per arch, only st_mode, st_size and
+   st_mtime are ever read so the offsets below are what matter */
+#if defined(__x86_64__)
 typedef struct {
   uint64_t st_dev;
   uint64_t st_ino;
@@ -58,10 +79,60 @@ typedef struct {
   int64_t st_ctime, st_ctime_nsec;
   uint64_t __unused[3];
 } stat_t;
+#elif defined(__aarch64__)
+/* asm-generic layout as filled by newfstatat */
+typedef struct {
+  uint64_t st_dev;
+  uint64_t st_ino;
+  uint32_t st_mode;
+  uint32_t st_nlink;
+  uint32_t st_uid;
+  uint32_t st_gid;
+  uint64_t st_rdev;
+  uint64_t __pad1;
+  int64_t st_size;
+  int32_t st_blksize;
+  int32_t __pad2;
+  int64_t st_blocks;
+  int64_t st_atime;
+  uint64_t st_atime_nsec;
+  int64_t st_mtime;
+  uint64_t st_mtime_nsec;
+  int64_t st_ctime;
+  uint64_t st_ctime_nsec;
+  uint32_t __unused4;
+  uint32_t __unused5;
+} stat_t;
+#else
+/* arm eabi struct stat64 as filled by fstatat64 and fstat64 */
+typedef struct {
+  uint64_t st_dev;
+  uint32_t __pad0;
+  uint32_t __st_ino;
+  uint32_t st_mode;
+  uint32_t st_nlink;
+  uint32_t st_uid;
+  uint32_t st_gid;
+  uint64_t st_rdev;
+  uint32_t __pad3;
+  uint32_t __pad4;
+  int64_t st_size;
+  uint32_t st_blksize;
+  uint32_t __pad5;
+  uint64_t st_blocks;
+  uint32_t st_atime;
+  uint32_t st_atime_nsec;
+  uint32_t st_mtime;
+  uint32_t st_mtime_nsec;
+  uint32_t st_ctime;
+  uint32_t st_ctime_nsec;
+  uint64_t st_ino;
+} stat_t;
+#endif
 
-struct timeval_t {
-  long tv_sec;
-  long tv_usec;
+struct timespec_t {
+  int64_t tv_sec;
+  int64_t tv_nsec;
 };
 
 struct pollfd_t {
@@ -70,12 +141,29 @@ struct pollfd_t {
   short revents;
 };
 
+/* arm eabi orders sigaction handler, mask, flags, restorer, aarch64
+   has no restorer field at all */
+#if defined(__arm__)
+struct kernel_sigaction {
+  void (*handler)(int);
+  unsigned long mask;
+  unsigned long flags;
+  void (*restorer)(void);
+};
+#elif defined(__aarch64__)
+struct kernel_sigaction {
+  void (*handler)(int);
+  unsigned long flags;
+  unsigned long mask;
+};
+#else
 struct kernel_sigaction {
   void (*handler)(int);
   unsigned long flags;
   void (*restorer)(void);
   unsigned long mask;
 };
+#endif
 
 typedef void (*sighandler_t)(int);
 
@@ -160,48 +248,631 @@ enum {
 
 enum { CGI_NONE = 0, CGI_NORMAL, CGI_INDEX, CGI_INTERPRETER };
 
-/* raw syscall wrappers from start.S, return negative errno on error
+/* inline syscall layer for all three arches, no libc, raw wrappers
+   hand the kernel value back, negative errno on error
  */
 
-extern long k_read(int fd, void *buf, size_t n);
-extern long k_write(int fd, const void *buf, size_t n);
-extern long k_open(const char *path, int flags);
-extern long k_close(int fd);
-extern long k_stat(const char *path, stat_t *buf);
-extern long k_fstat(int fd, stat_t *buf);
-extern long k_poll(struct pollfd_t *fds, unsigned nfds, int timeout);
-extern long k_lseek(int fd, int64_t offset, int whence);
-extern long k_rt_sigaction(int sig, const struct kernel_sigaction *act,
-                           struct kernel_sigaction *oldact, size_t sigsetsize);
-extern long k_access(const char *path, int mode);
-extern long k_pipe(int pipefd[2]);
-extern long k_dup2(int oldfd, int newfd);
-extern long k_alarm(unsigned seconds);
-extern long k_socket(int domain, int type, int protocol);
-extern long k_connect(int fd, const sockaddr_in_t *addr, socklen_t len);
-extern long k_accept(int fd, sockaddr_in_t *addr, socklen_t *len);
-extern long k_sendto(int fd, const void *buf, size_t n, int flags,
-                     const sockaddr_in_t *dest, socklen_t len);
-extern long k_recvfrom(int fd, void *buf, size_t n, int flags,
-                       sockaddr_in_t *src, socklen_t *len);
-extern long k_shutdown(int fd, int how);
-extern long k_bind(int fd, const sockaddr_in_t *addr, socklen_t len);
-extern long k_listen(int fd, int backlog);
-extern long k_getpeername(int fd, sockaddr_in_t *addr, socklen_t *len);
-extern long k_setsockopt(int fd, int level, int optname, const void *optval,
-                         socklen_t optlen);
-extern long k_fork(void);
-extern long k_execve(const char *path, char **argv, char **envp);
-extern long k_exit(int status);
-extern long k_wait4(int pid, int *wstatus, int options, void *rusage);
-extern long k_getcwd(char *buf, size_t size);
-extern long k_chdir(const char *path);
-extern long k_gettimeofday(struct timeval_t *tv, void *tz);
-extern long k_setuid(unsigned uid);
-extern long k_setgid(unsigned gid);
-extern long k_setsid(void);
-extern long k_setgroups(size_t size, const unsigned *list);
-extern long k_getrandom(void *buf, size_t n, unsigned flags);
+#define AT_FDCWD (-100)
+
+#if defined(__x86_64__)
+/* args live in rdi rsi rdx rcx r8 r9 at the c level but the kernel
+   wants them in rdi rsi rdx r10 r8 r9, register vars put the last
+   three where the kernel reads them, musl does the same trick */
+static inline long k_sys6(long n, long a1, long a2, long a3, long a4, long a5,
+                          long a6) {
+  long ret;
+  register long r10 __asm__("r10") = a4;
+  register long r8 __asm__("r8") = a5;
+  register long r9 __asm__("r9") = a6;
+  __asm__ volatile("syscall"
+                   : "=a"(ret)
+                   : "a"(n), "D"(a1), "S"(a2), "d"(a3), "r"(r10), "r"(r8),
+                     "r"(r9)
+                   : "rcx", "r11", "memory");
+  return ret;
+}
+#elif defined(__aarch64__)
+/* nr in x8, args in x0-x5 */
+static inline long k_sys6(long n, long a1, long a2, long a3, long a4, long a5,
+                          long a6) {
+  register long x0 __asm__("x0") = a1;
+  register long x1 __asm__("x1") = a2;
+  register long x2 __asm__("x2") = a3;
+  register long x3 __asm__("x3") = a4;
+  register long x4 __asm__("x4") = a5;
+  register long x5 __asm__("x5") = a6;
+  register long x8 __asm__("x8") = n;
+  __asm__ volatile("svc #0"
+                   : "+r"(x0)
+                   : "r"(x1), "r"(x2), "r"(x3), "r"(x4), "r"(x5), "r"(x8)
+                   : "memory");
+  return x0;
+}
+#else
+/* nr in r7, args in r0-r5, eabi */
+static inline long k_sys6(long n, long a1, long a2, long a3, long a4, long a5,
+                          long a6) {
+  register long r0 __asm__("r0") = a1;
+  register long r1 __asm__("r1") = a2;
+  register long r2 __asm__("r2") = a3;
+  register long r3 __asm__("r3") = a4;
+  register long r4 __asm__("r4") = a5;
+  register long r5 __asm__("r5") = a6;
+  register long r7 __asm__("r7") = n;
+  __asm__ volatile("svc 0"
+                   : "+r"(r0)
+                   : "r"(r1), "r"(r2), "r"(r3), "r"(r4), "r"(r5), "r"(r7)
+                   : "memory");
+  return r0;
+}
+#endif
+
+/* syscall numbers per arch, absent entries are replaced by a shim
+ */
+
+#if defined(__x86_64__)
+#define NR_read 0
+#define NR_write 1
+#define NR_open 2
+#define NR_close 3
+#define NR_stat 4
+#define NR_fstat 5
+#define NR_poll 7
+#define NR_lseek 8
+#define NR_rt_sigaction 13
+#define NR_access 21
+#define NR_pipe 22
+#define NR_dup2 33
+#define NR_alarm 37
+#define NR_socket 41
+#define NR_connect 42
+#define NR_accept 43
+#define NR_sendto 44
+#define NR_shutdown 48
+#define NR_bind 49
+#define NR_listen 50
+#define NR_getpeername 52
+#define NR_setsockopt 54
+#define NR_fork 57
+#define NR_execve 59
+#define NR_exit 60
+#define NR_getcwd 79
+#define NR_chdir 80
+#define NR_setuid 105
+#define NR_setgid 106
+#define NR_setsid 112
+#define NR_setgroups 116
+#define NR_clock_gettime 228
+#define NR_getrandom 318
+#elif defined(__aarch64__)
+#define NR_read 63
+#define NR_write 64
+#define NR_openat 56
+#define NR_close 57
+#define NR_fstat 80
+#define NR_newfstatat 79
+#define NR_lseek 62
+#define NR_rt_sigaction 134
+#define NR_faccessat 48
+#define NR_pipe2 59
+#define NR_dup3 24
+#define NR_ppoll 73
+#define NR_setitimer 103
+#define NR_socket 198
+#define NR_connect 203
+#define NR_accept 202
+#define NR_sendto 206
+#define NR_shutdown 210
+#define NR_bind 200
+#define NR_listen 201
+#define NR_getpeername 205
+#define NR_setsockopt 208
+#define NR_clone 220
+#define NR_execve 221
+#define NR_exit_group 94
+#define NR_getcwd 17
+#define NR_chdir 49
+#define NR_setuid 146
+#define NR_setgid 144
+#define NR_setsid 157
+#define NR_setgroups 159
+#define NR_clock_gettime 113
+#define NR_getrandom 278
+#else
+#define NR_read 3
+#define NR_write 4
+#define NR_openat 322
+#define NR_close 6
+#define NR_fstat64 197
+#define NR_fstatat64 327
+#define NR_poll 168
+#define NR_rt_sigaction 174
+#define NR_faccessat 334
+#define NR_pipe2 359
+#define NR_dup3 358
+#define NR_alarm 27
+#define NR_socket 281
+#define NR_connect 283
+#define NR_accept 285
+#define NR_sendto 290
+#define NR_shutdown 293
+#define NR_bind 282
+#define NR_listen 284
+#define NR_getpeername 287
+#define NR_setsockopt 294
+#define NR_fork 2
+#define NR_execve 11
+#define NR_exit_group 248
+#define NR_getcwd 183
+#define NR_chdir 12
+#define NR_setuid32 213
+#define NR_setgid32 214
+#define NR_setsid 66
+#define NR_setgroups32 206
+#define NR_clock_gettime64 403
+#define NR_getrandom 384
+#define NR_llseek 140
+#endif
+
+static inline long k_read(int fd, void *buf, size_t n) {
+  return k_sys6(NR_read, fd, (long)buf, (long)n, 0, 0, 0);
+}
+
+static inline long k_write(int fd, const void *buf, size_t n) {
+  return k_sys6(NR_write, fd, (long)buf, (long)n, 0, 0, 0);
+}
+
+#if defined(__x86_64__)
+/* the rest use openat with AT_FDCWD, there is no plain open */
+static inline long k_open(const char *path, int flags) {
+  return k_sys6(NR_open, (long)path, flags, 0, 0, 0, 0);
+}
+#else
+static inline long k_open(const char *path, int flags) {
+  return k_sys6(NR_openat, AT_FDCWD, (long)path, flags, 0, 0, 0);
+}
+#endif
+
+static inline long k_close(int fd) { return k_sys6(NR_close, fd, 0, 0, 0, 0, 0); }
+
+#if defined(__x86_64__)
+static inline long k_stat(const char *path, stat_t *buf) {
+  return k_sys6(NR_stat, (long)path, (long)buf, 0, 0, 0, 0);
+}
+#elif defined(__aarch64__)
+static inline long k_stat(const char *path, stat_t *buf) {
+  return k_sys6(NR_newfstatat, AT_FDCWD, (long)path, (long)buf, 0, 0, 0);
+}
+#else
+static inline long k_stat(const char *path, stat_t *buf) {
+  return k_sys6(NR_fstatat64, AT_FDCWD, (long)path, (long)buf, 0, 0, 0);
+}
+#endif
+
+static inline long k_fstat(int fd, stat_t *buf) {
+#if defined(__arm__)
+  return k_sys6(NR_fstat64, fd, (long)buf, 0, 0, 0, 0);
+#else
+  return k_sys6(NR_fstat, fd, (long)buf, 0, 0, 0, 0);
+#endif
+}
+
+#if defined(__aarch64__)
+/* aarch64 has no poll, ppoll takes a timespec instead of int ms */
+static inline long k_poll(struct pollfd_t *fds, unsigned nfds, int timeout) {
+  if (timeout < 0)
+    return k_sys6(NR_ppoll, (long)fds, nfds, 0, 0, 0, 0);
+  struct timespec_t ts = {(int64_t)(timeout / 1000),
+                          (int64_t)(timeout % 1000) * 1000000};
+  return k_sys6(NR_ppoll, (long)fds, nfds, (long)&ts, 0, 0, 0);
+}
+#else
+static inline long k_poll(struct pollfd_t *fds, unsigned nfds, int timeout) {
+  return k_sys6(NR_poll, (long)fds, nfds, timeout, 0, 0, 0);
+}
+#endif
+
+#if defined(__arm__)
+/* armv6/v7 has no 64-bit lseek, _llseek splits the offset hi and lo
+   and hands the result back through a pointer */
+static inline long k_lseek(int fd, int64_t offset, int whence) {
+  unsigned long long result;
+  long r = k_sys6(NR_llseek, fd, (long)((uint64_t)offset >> 32),
+                  (long)(uint32_t)offset, (long)&result, whence, 0);
+  return r < 0 ? r : (long)result;
+}
+#else
+static inline long k_lseek(int fd, int64_t offset, int whence) {
+  return k_sys6(NR_lseek, fd, (long)offset, whence, 0, 0, 0);
+}
+#endif
+
+static inline long k_rt_sigaction(int sig, const struct kernel_sigaction *act,
+                                  struct kernel_sigaction *oldact,
+                                  size_t sigsetsize) {
+  return k_sys6(NR_rt_sigaction, sig, (long)act, (long)oldact,
+                (long)sigsetsize, 0, 0);
+}
+
+#if defined(__x86_64__)
+static inline long k_access(const char *path, int mode) {
+  return k_sys6(NR_access, (long)path, mode, 0, 0, 0, 0);
+}
+#else
+static inline long k_access(const char *path, int mode) {
+  return k_sys6(NR_faccessat, AT_FDCWD, (long)path, mode, 0, 0, 0);
+}
+#endif
+
+#if defined(__x86_64__)
+static inline long k_pipe(int pipefd[2]) {
+  return k_sys6(NR_pipe, (long)pipefd, 0, 0, 0, 0, 0);
+}
+#else
+static inline long k_pipe(int pipefd[2]) {
+  return k_sys6(NR_pipe2, (long)pipefd, 0, 0, 0, 0, 0);
+}
+#endif
+
+#if defined(__x86_64__)
+static inline long k_dup2(int oldfd, int newfd) {
+  return k_sys6(NR_dup2, oldfd, newfd, 0, 0, 0, 0);
+}
+#else
+static inline long k_dup2(int oldfd, int newfd) {
+  return k_sys6(NR_dup3, oldfd, newfd, 0, 0, 0, 0);
+}
+#endif
+
+#if defined(__aarch64__)
+/* aarch64 has no alarm, setitimer with itimer_real is the same thing */
+static inline long k_alarm(unsigned seconds) {
+  struct {
+    int64_t sec, usec;
+  } it[2] = {{0, 0}, {(int64_t)seconds, 0}};
+  return k_sys6(NR_setitimer, 0, (long)it, 0, 0, 0, 0);
+}
+#else
+static inline long k_alarm(unsigned seconds) {
+  return k_sys6(NR_alarm, seconds, 0, 0, 0, 0, 0);
+}
+#endif
+
+static inline long k_socket(int domain, int type, int protocol) {
+  return k_sys6(NR_socket, domain, type, protocol, 0, 0, 0);
+}
+
+static inline long k_connect(int fd, const sockaddr_in_t *addr,
+                             socklen_t len) {
+  return k_sys6(NR_connect, fd, (long)addr, len, 0, 0, 0);
+}
+
+static inline long k_accept(int fd, sockaddr_in_t *addr, socklen_t *len) {
+  return k_sys6(NR_accept, fd, (long)addr, (long)len, 0, 0, 0);
+}
+
+static inline long k_sendto(int fd, const void *buf, size_t n, int flags,
+                            const sockaddr_in_t *dest, socklen_t len) {
+  return k_sys6(NR_sendto, fd, (long)buf, (long)n, flags, (long)dest, len);
+}
+
+static inline long k_shutdown(int fd, int how) {
+  return k_sys6(NR_shutdown, fd, how, 0, 0, 0, 0);
+}
+
+static inline long k_bind(int fd, const sockaddr_in_t *addr, socklen_t len) {
+  return k_sys6(NR_bind, fd, (long)addr, len, 0, 0, 0);
+}
+
+static inline long k_listen(int fd, int backlog) {
+  return k_sys6(NR_listen, fd, backlog, 0, 0, 0, 0);
+}
+
+static inline long k_getpeername(int fd, sockaddr_in_t *addr, socklen_t *len) {
+  return k_sys6(NR_getpeername, fd, (long)addr, (long)len, 0, 0, 0);
+}
+
+static inline long k_setsockopt(int fd, int level, int optname,
+                                const void *optval, socklen_t optlen) {
+  return k_sys6(NR_setsockopt, fd, level, optname, (long)optval, optlen, 0);
+}
+
+#if defined(__aarch64__)
+/* no fork syscall on aarch64, clone with sigchld matches fork enough */
+static inline long k_fork(void) {
+  return k_sys6(NR_clone, SIG_CHLD, 0, 0, 0, 0, 0);
+}
+#else
+static inline long k_fork(void) { return k_sys6(NR_fork, 0, 0, 0, 0, 0, 0); }
+#endif
+
+static inline long k_execve(const char *path, char **argv, char **envp) {
+  return k_sys6(NR_execve, (long)path, (long)argv, (long)envp, 0, 0, 0);
+}
+
+#if defined(__x86_64__)
+static inline long k_exit(int status) {
+  return k_sys6(NR_exit, status, 0, 0, 0, 0, 0);
+}
+#else
+/* exit only ends the calling thread, exit_group ends the process */
+static inline long k_exit(int status) {
+  return k_sys6(NR_exit_group, status, 0, 0, 0, 0, 0);
+}
+#endif
+
+static inline long k_getcwd(char *buf, size_t size) {
+  return k_sys6(NR_getcwd, (long)buf, (long)size, 0, 0, 0, 0);
+}
+
+static inline long k_chdir(const char *path) {
+  return k_sys6(NR_chdir, (long)path, 0, 0, 0, 0, 0);
+}
+
+#if defined(__arm__)
+/* 16-bit legacy uid/gid syscalls are what the plain numbers call on
+   armv7, use the 32-bit variants instead */
+static inline long k_setuid(unsigned uid) {
+  return k_sys6(NR_setuid32, uid, 0, 0, 0, 0, 0);
+}
+static inline long k_setgid(unsigned gid) {
+  return k_sys6(NR_setgid32, gid, 0, 0, 0, 0, 0);
+}
+static inline long k_setgroups(size_t size, const unsigned *list) {
+  return k_sys6(NR_setgroups32, (long)size, (long)list, 0, 0, 0, 0);
+}
+#else
+static inline long k_setuid(unsigned uid) {
+  return k_sys6(NR_setuid, uid, 0, 0, 0, 0, 0);
+}
+static inline long k_setgid(unsigned gid) {
+  return k_sys6(NR_setgid, gid, 0, 0, 0, 0, 0);
+}
+static inline long k_setgroups(size_t size, const unsigned *list) {
+  return k_sys6(NR_setgroups, (long)size, (long)list, 0, 0, 0, 0);
+}
+#endif
+
+static inline long k_setsid(void) { return k_sys6(NR_setsid, 0, 0, 0, 0, 0, 0); }
+
+#if defined(__arm__)
+/* clock_gettime64 with a time32 fallback for kernels before 5.1 */
+static inline long k_clock_gettime(int clk, struct timespec_t *ts) {
+  long r = k_sys6(NR_clock_gettime64, clk, (long)ts, 0, 0, 0, 0);
+  if (r == -38) { /* enosys */
+    struct {
+      int32_t sec, nsec;
+    } ts32;
+    r = k_sys6(263, clk, (long)&ts32, 0, 0, 0, 0);
+    if (r == 0) {
+      ts->tv_sec = ts32.sec;
+      ts->tv_nsec = ts32.nsec;
+    }
+  }
+  return r;
+}
+#else
+static inline long k_clock_gettime(int clk, struct timespec_t *ts) {
+  return k_sys6(NR_clock_gettime, clk, (long)ts, 0, 0, 0, 0);
+}
+#endif
+
+static inline long k_getrandom(void *buf, size_t n, unsigned flags) {
+  return k_sys6(NR_getrandom, (long)buf, (long)n, flags, 0, 0, 0);
+}
+
+/* entry point and signal return trampoline, top level asm keeps the
+   binary freestanding with no crt at all */
+#if defined(__x86_64__)
+__asm__(".global k_sigreturn\n"
+        "k_sigreturn:\n"
+        "  mov $15, %eax\n" /* rt_sigreturn */
+        "  syscall\n"
+        ".global _start\n"
+        "_start:\n"
+        "  xor   %rbp, %rbp\n"
+        "  pop   %rdi\n"                       /* argc */
+        "  mov   %rsp, %rsi\n"                 /* argv */
+        "  lea   8(%rsi,%rdi,8), %rdx\n"       /* envp */
+        "  sub   $8, %rsp\n"                   /* align the stack for the call */
+        "  call  main\n"
+        "  mov   %eax, %edi\n"
+        "  mov   $60, %eax\n"                  /* exit */
+        "  syscall\n");
+#elif defined(__aarch64__)
+/* the kernel installs the sigreturn trampoline itself here, no
+   k_sigreturn needed on aarch64 */
+__asm__(".global _start\n"
+        "_start:\n"
+        "  ldr   x0, [sp]\n"               /* argc */
+        "  add   x1, sp, #8\n"             /* argv */
+        "  add   x2, x1, x0, lsl #3\n"     /* envp = argv + (argc+1)*8 */
+        "  add   x2, x2, #8\n"
+        "  bl    main\n"
+        "  mov   x8, #94\n"                /* exit_group, status is in w0 */
+        "  svc   #0\n");
+#else
+__asm__(".global k_sigreturn\n"
+        "k_sigreturn:\n"
+        "  mov   r7, #173\n" /* rt_sigreturn */
+        "  svc   0\n"
+        "  b     k_sigreturn\n" /* rt_sigreturn never returns */
+        ".global _start\n"
+        "_start:\n"
+        "  ldr   r0, [sp]\n"               /* argc */
+        "  add   r1, sp, #4\n"             /* argv */
+        "  add   r2, r1, r0, lsl #2\n"     /* envp = argv + (argc+1)*4 */
+        "  add   r2, r2, #4\n"
+        "  bic   sp, sp, #7\n"             /* 8-byte align for eabi */
+        "  bl    main\n"
+        "  mov   r7, #248\n"               /* exit_group, status is in r0 */
+        "  svc   0\n");
+#endif
+
+#if defined(__arm__)
+/* compiler generated aeabi helpers, 32-bit arm calls these for
+   division and 64-bit shifts and there is no libgcc around */
+__asm__(".global __aeabi_uidiv\n"
+        "__aeabi_uidiv:\n" /* r0 = n, r1 = d, returns n/d */
+        "  cmp   r1, #0\n"
+        "  bxeq  lr\n"
+        "  mov   ip, #0\n" /* ip = quotient */
+        "  mov   r3, r1\n" /* r3 = d */
+        "  mov   r2, #1\n" /* r2 = bit */
+        ".Lk_build:\n"
+        "  cmp   r3, r0\n"
+        "  bhi   .Lk_shift\n"
+        "  tst   r3, #0x80000000\n"
+        "  bne   .Lk_shift\n"
+        "  mov   r3, r3, lsl #1\n"
+        "  mov   r2, r2, lsl #1\n"
+        "  b     .Lk_build\n"
+        ".Lk_shift:\n"
+        "  cmp   r3, r0\n"
+        "  bhi   1f\n"
+        "  sub   r0, r0, r3\n"
+        "  orr   ip, ip, r2\n"
+        "1:\n"
+        "  movs  r3, r3, lsr #1\n"
+        "  mov   r2, r2, lsr #1\n"
+        "  cmp   r2, #0\n"
+        "  bne   .Lk_shift\n"
+        "  mov   r0, ip\n"
+        "  bx    lr\n"
+        ".global __aeabi_idiv\n"
+        "__aeabi_idiv:\n" /* signed r0 / r1 */
+        "  eor   r2, r0, r1\n" /* result sign */
+        "  cmp   r0, #0\n"
+        "  rsblt r0, r0, #0\n"
+        "  cmp   r1, #0\n"
+        "  rsblt r1, r1, #0\n"
+        "  push  {r2, lr}\n"
+        "  bl    __aeabi_uidiv\n"
+        "  pop   {r2, lr}\n"
+        "  cmp   r2, #0\n"
+        "  rsblt r0, r0, #0\n"
+        "  bx    lr\n"
+        ".global __aeabi_uidivmod\n"
+        "__aeabi_uidivmod:\n" /* returns r0 = q, r1 = rem */
+        "  push  {r4, lr}\n"
+        "  mov   r4, r0\n" /* n */
+        "  bl    __aeabi_uidiv\n"
+        "  mul   r1, r0, r1\n" /* q * d */
+        "  sub   r1, r4, r1\n" /* n - q*d */
+        "  pop   {r4, pc}\n"
+        ".global __aeabi_idivmod\n"
+        "__aeabi_idivmod:\n"
+        "  push  {r4, r5, lr}\n"
+        "  mov   r4, r0\n" /* n */
+        "  mov   r5, r1\n" /* d, kept signed */
+        "  bl    __aeabi_idiv\n"
+        "  mul   r1, r0, r5\n"
+        "  sub   r1, r4, r1\n"
+        "  pop   {r4, r5, pc}\n"
+        ".global __aeabi_uldivmod\n"
+        "__aeabi_uldivmod:\n" /* r0:r1 = n, r2:r3 = d, q and r swapped back */
+        "  push  {r4-r11, lr}\n"
+        "  cmp   r3, #0\n"
+        "  bne   1f\n"
+        "  cmp   r2, #0\n"
+        "  bne   1f\n"
+        "  mov   r0, #0\n" /* d is zero, sit on 0 like the rest */
+        "  mov   r1, #0\n"
+        "  mov   r2, #0\n"
+        "  mov   r3, #0\n"
+        "  pop   {r4-r11, pc}\n"
+        "1:\n"
+        "  mov   r4, r0\n" /* n.lo */
+        "  mov   r5, r1\n" /* n.hi */
+        "  mov   r6, r2\n" /* d.lo */
+        "  mov   r7, r3\n" /* d.hi */
+        "  mov   r0, #0\n" /* q = 0 */
+        "  mov   r1, #0\n"
+        "  mov   r2, #1\n" /* bit = 1 */
+        "  mov   r3, #0\n"
+        ".Lk_build64:\n"
+        "  cmp   r7, r5\n" /* d > n? */
+        "  bhi   .Lk_shift64\n"
+        "  bne   2f\n"
+        "  cmp   r6, r4\n"
+        "  bhi   .Lk_shift64\n"
+        "2:\n"
+        "  tst   r7, #0x80000000\n"
+        "  bne   .Lk_shift64\n"
+        "  movs  r6, r6, lsl #1\n" /* d <<= 1 */
+        "  adc   r7, r7, r7\n"
+        "  movs  r2, r2, lsl #1\n" /* bit <<= 1 */
+        "  adc   r3, r3, r3\n"
+        "  b     .Lk_build64\n"
+        ".Lk_shift64:\n"
+        "  cmp   r7, r5\n" /* d <= n? */
+        "  bhi   3f\n"
+        "  bne   4f\n"
+        "  cmp   r6, r4\n"
+        "  bhi   3f\n"
+        "4:\n"
+        "  subs  r4, r4, r6\n" /* n -= d */
+        "  sbc   r5, r5, r7\n"
+        "  orr   r0, r0, r2\n" /* q |= bit */
+        "  orr   r1, r1, r3\n"
+        "3:\n"
+        "  movs  r7, r7, lsr #1\n" /* d >>= 1 */
+        "  rrx   r6, r6\n"
+        "  movs  r3, r3, lsr #1\n" /* bit >>= 1 */
+        "  rrx   r2, r2\n"
+        "  orrs  ip, r2, r3\n"
+        "  bne   .Lk_shift64\n"
+        "  mov   r2, r4\n" /* rem out */
+        "  mov   r3, r5\n"
+        "  pop   {r4-r11, pc}\n"
+        ".global __aeabi_ldivmod\n"
+        "__aeabi_ldivmod:\n" /* signed r0:r1 = n, r2:r3 = d */
+        "  push  {r4-r11, lr}\n"
+        "  mov   r10, r1\n" /* sign of n */
+        "  eor   r11, r1, r3\n" /* sign of the result */
+        "  cmp   r1, #0\n"
+        "  bpl   1f\n"
+        "  rsbs  r0, r0, #0\n" /* n = -n */
+        "  rsc   r1, r1, #0\n"
+        "1:\n"
+        "  cmp   r3, #0\n"
+        "  bpl   2f\n"
+        "  rsbs  r2, r2, #0\n" /* d = -d */
+        "  rsc   r3, r3, #0\n"
+        "2:\n"
+        "  bl    __aeabi_uldivmod\n"
+        "  cmp   r11, #0\n"
+        "  bpl   3f\n"
+        "  rsbs  r0, r0, #0\n" /* q = -q */
+        "  rsc   r1, r1, #0\n"
+        "3:\n"
+        "  cmp   r10, #0\n"
+        "  bpl   4f\n"
+        "  rsbs  r2, r2, #0\n" /* rem keeps the sign of n */
+        "  rsc   r3, r3, #0\n"
+        "4:\n"
+        "  pop   {r4-r11, pc}\n"
+        ".global __aeabi_llsl\n"
+        "__aeabi_llsl:\n" /* r0:r1 <<= r2 */
+        "  cmp   r2, #0\n"
+        "  bxeq  lr\n"
+        "5:\n"
+        "  movs  r0, r0, lsl #1\n"
+        "  adc   r1, r1, r1\n"
+        "  subs  r2, r2, #1\n"
+        "  bne   5b\n"
+        "  bx    lr\n"
+        ".global __aeabi_llsr\n"
+        "__aeabi_llsr:\n" /* r0:r1 >>= r2, logical */
+        "  cmp   r2, #0\n"
+        "  bxeq  lr\n"
+        "6:\n"
+        "  movs  r1, r1, lsr #1\n"
+        "  rrx   r0, r0\n"
+        "  subs  r2, r2, #1\n"
+        "  bne   6b\n"
+        "  bx    lr\n");
+#endif
 
 static char **environ;
 static int kerrno;
@@ -613,14 +1284,18 @@ static ssize_t full_write(int fd, const void *buf, size_t n) {
 /* signals
  */
 
+#if defined(__x86_64__) || defined(__arm__)
 extern void k_sigreturn(void);
+#endif
 
 static void set_signal(int sig, sighandler_t handler) {
   struct kernel_sigaction sa;
   memset(&sa, 0, sizeof(sa));
   sa.handler = handler;
+#if defined(__x86_64__) || defined(__arm__)
   sa.flags = SA_RESTORER;
   sa.restorer = k_sigreturn;
+#endif
   sa.mask = 0;
   sysret(k_rt_sigaction(sig, &sa, 0, 8));
 }
@@ -669,16 +1344,16 @@ static void exit_now(int status) {
 /* time and dates
  */
 
-static long now_sec(void) {
-  struct timeval_t tv;
-  sysret(k_gettimeofday(&tv, 0));
-  return tv.tv_sec;
+static int64_t now_sec(void) {
+  struct timespec_t ts;
+  sysret(k_clock_gettime(0, &ts)); /* clock_realtime */
+  return ts.tv_sec;
 }
 
 /* days since epoch to y/m/d, howard hinnant's civil_from_days */
-static void civil_from_days(long z, int *yp, int *mp, int *dp) {
+static void civil_from_days(int64_t z, int *yp, int *mp, int *dp) {
   z += 719468;
-  long era = (z >= 0 ? z : z - 146096) / 146097;
+  int64_t era = (z >= 0 ? z : z - 146096) / 146097;
   unsigned long doe = (unsigned long)(z - era * 146097);
   unsigned long yoe = (doe - doe / 1460 + doe / 36524 - doe / 146096) / 365;
   long y = (long)yoe + era * 400;
@@ -694,13 +1369,13 @@ static void civil_from_days(long z, int *yp, int *mp, int *dp) {
 }
 
 /* rfc1123 date, 29 chars like "Sun, 06 Nov 1994 08:49:37 GMT" */
-static void fmt_rfc1123(char *out, long t) {
+static void fmt_rfc1123(char *out, int64_t t) {
   static const char wday[7][4] = {"Sun", "Mon", "Tue", "Wed",
                                   "Thu", "Fri", "Sat"};
   static const char month[12][4] = {"Jan", "Feb", "Mar", "Apr", "May", "Jun",
                                     "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"};
-  long days = t / 86400;
-  long secs = t % 86400;
+  int64_t days = t / 86400;
+  int64_t secs = t % 86400;
   int wd = (int)((days + 4) % 7);
   int y, m, d;
   civil_from_days(days, &y, &m, &d);
@@ -1997,11 +2672,11 @@ static const char *g_realm = "Web Server Authentication";
 static char *g_query;
 static int flg_deny_all;
 static int content_gzip;
-static long file_size = -1;
-static long last_mod;
-static long range_start = -1;
-static long range_end;
-static long range_len;
+static int64_t file_size = -1;
+static int64_t last_mod;
+static int64_t range_start = -1;
+static int64_t range_end;
+static int64_t range_len;
 static const char *found_mime;
 static const char *found_moved;
 static char *remoteuser;
@@ -2599,15 +3274,16 @@ static void send_headers(unsigned responseNum) {
   if (file_size != -1) {
     if (responseNum == HTTP_PARTIAL_CONTENT) {
       len += ksnprintf(iobuf + len, IOBUF_SIZE - len,
-                       "Content-Range: bytes %ld-%ld/%ld\r\n", range_start,
-                       range_end, file_size);
+                       "Content-Range: bytes %lld-%lld/%lld\r\n",
+                       (long long)range_start, (long long)range_end,
+                       (long long)file_size);
       file_size = range_end - range_start + 1;
     }
     fmt_rfc1123(date_str, last_mod);
     len += ksnprintf(iobuf + len, IOBUF_SIZE - len,
                      "Accept-Ranges: bytes\r\nLast-Modified: %s\r\n"
-                     "ETag: %s\r\nContent-Length: %ld\r\n",
-                     date_str, etag_buf, file_size);
+                     "ETag: %s\r\nContent-Length: %lld\r\n",
+                     date_str, etag_buf, (long long)file_size);
   }
 
   if (content_gzip)
@@ -2676,8 +3352,8 @@ static void send_file_and_exit(const char *url, int what) {
     if (fd >= 0) {
       stat_t sb;
       if (sysret(k_fstat(fd, &sb)) == 0) {
-        file_size = (long)sb.st_size;
-        last_mod = (long)sb.st_mtime;
+        file_size = sb.st_size;
+        last_mod = sb.st_mtime;
       }
     } else {
       content_gzip = 0;
@@ -2706,7 +3382,7 @@ static void send_file_and_exit(const char *url, int what) {
   if (suffix)
     lookup_mime(suffix);
 
-  range_len = 0x7fffffffffffffffL;
+  range_len = 0x7fffffffffffffffLL;
   if (range_start >= 0) {
     if (range_end == 0 || range_end > file_size - 1)
       range_end = file_size - 1;
@@ -3286,8 +3962,8 @@ found:
           }
         }
       }
-      file_size = (long)sb.st_size;
-      last_mod = (long)sb.st_mtime;
+      file_size = sb.st_size;
+      last_mod = sb.st_mtime;
     }
   } else if (urlp[-1] == '/') {
     /* a dir url with no index page, try cgi-bin/index.cgi */
