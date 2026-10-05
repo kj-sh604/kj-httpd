@@ -2,7 +2,7 @@
 
 `busybox httpd` workalike in a single freestanding static binary.
 
-This talks to the kernel directly, so it compiles to a true static binary with no dynamic linker underneath. It runs on any x86_64 linux no matter what is installed there, up to and including a broken or rescue system that has nothing to speak of.
+This talks to the kernel directly, so it compiles to a true static binary with no dynamic linker underneath. It runs on any x86_64, aarch64 (arm64) or 32-bit armv6/armv7 linux no matter what is installed there, up to and including a broken or rescue system that has nothing to speak of.
 
 **Deliberate deviations from busybox:** ipv4 only, no ipv6 sockets, and the server runs in the foreground by default with `-b` to send it to the background.
 
@@ -19,7 +19,7 @@ This talks to the kernel directly, so it compiles to a true static binary with n
 - inetd mode and daemon mode, SIGHUP reloads the config
 - one shot helpers: md5 crypt, html encode, url decode
 - dns through /etc/hosts and /etc/resolv.conf, no libc needed
-- builds with `gcc`, `clang` or `tcc`
+- builds with `gcc`, `clang` or `tcc` on x86_64, and with `gcc` or `clang` on aarch64 and armv7
 - the bundled index.html is a browser native test page, handy for a quick smoke test
 
 ## dependencies
@@ -43,7 +43,26 @@ make CC=clang
 make CC=tcc
 ```
 
-tcc has its own linker and skips the tiny layout flags, so its build comes out a bit bigger (about 66k vs 37k).
+tcc has its own linker and skips the tiny layout flags, so its build comes out a bit bigger (about 66k vs 37k). tcc is x86_64 only.
+
+The architecture is detected from the compiler and can be overridden, so a plain `make` on an arm device just works. Optional cpu tuning:
+
+```sh
+make NATIVE=1
+```
+
+uses `-march=native -mtune=native` where the toolchain takes it (`-mcpu=native` on arm gcc). The untuned build sticks to the compiler default so the binary stays portable.
+
+Cross compilation from x86_64:
+
+```sh
+make ARCH=aarch64 CC=aarch64-linux-gnu-gcc
+make ARCH=arm CC=arm-linux-gnueabihf-gcc
+make ARCH=arm CC=arm-linux-gnueabi-gcc
+make ARCH=arm CC='clang --target=armv7-linux-gnueabihf'
+```
+
+clang cross builds route through lld automatically, gcc cross compilers use their own linker. Hard float and soft float arm toolchains both work, there is no floating point in here. Cross builds skip the final strip step since that needs a matching strip, `STRIP=` pins it when you have one.
 
 ## install
 
@@ -53,7 +72,7 @@ make install
 
 installs to `~/.local/bin` by default, `PREFIX=` overrides the install location.
 
-## remove
+## uninstall
 
 ```sh
 make remove
