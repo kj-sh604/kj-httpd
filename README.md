@@ -80,7 +80,7 @@ make remove
 
 ## usage
 
-```
+```plaintext
 Usage: kj-httpd [-ibv[v]] [-c CONFFILE] [-p [IP:]PORT] [-u USER[:GRP]] [-r REALM] [-h HOME]
 or kj-httpd -d/-e/-m STRING
 
@@ -103,7 +103,7 @@ Listen for incoming HTTP requests
 
 Same format as busybox httpd, searched at /etc/httpd.conf then ./httpd.conf unless `-c` is given.
 
-```
+```plaintext
 H:/serverroot                    # change server root, overrides -h, chdirs into it
 A:172.20.                        # allow address from 172.20.0.0/16
 A:10.0.0.0/25                    # allow from 10.0.0.0-10.0.0.127
